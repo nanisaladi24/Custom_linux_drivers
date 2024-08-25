@@ -58,7 +58,7 @@ struct pcdrv_private_data
     dev_t device_number;
     /* Device class/device structs */
     struct class *class_pcd;
-    struct device *device_pcd[NO_OF_DEVICES];
+    struct device *device_pcd;
     struct pcdev_private_data pcdev_data[NO_OF_DEVICES];
 };
 
@@ -196,7 +196,12 @@ ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, lof
     }
 
     /*copy to user*/
-    if (copy_from_user(&pcdev_data->buffer+(*f_pos),buff,count))
+    if (copy_from_user(pcdev_data->buffer+(*f_pos),buff,count)) 
+    /*
+    * Found a bug above during development. 
+    * Used &pcdev_data->buffer instead of direct dereference for pointer. 
+    * This caused mem overwrite. Kernel memory is so insecure. This caused segmentation fault big crash (memory leak).
+    */
     {
         return -EFAULT;
     }
@@ -250,7 +255,7 @@ int pcd_open(struct inode *inode, struct file *filep)
 int pcd_release(struct inode *inode, struct file *filep)
 {
     pr_info("release is successful\n");
-    return PCD_DRV_SUCCESS;
+    return 0;
 }
 
 static int __init pcd_driver_init(void)
@@ -294,18 +299,18 @@ static int __init pcd_driver_init(void)
 
 
         /* 4. Populate sysfs with device information */
-        pcdrv_data.device_pcd[i]=device_create(pcdrv_data.class_pcd,NULL,pcdrv_data.device_number+i,NULL,"pcdev-%d",i+1); //error handle later
-        if(IS_ERR(pcdrv_data.device_pcd[i]))
+        pcdrv_data.device_pcd=device_create(pcdrv_data.class_pcd,NULL,pcdrv_data.device_number+i,NULL,"pcdev-%d",i+1); //error handle later
+        if(IS_ERR(pcdrv_data.device_pcd))
         {
             pr_err("device creation failed\n");
-            ret = PTR_ERR(pcdrv_data.device_pcd[i]);
+            ret = PTR_ERR(pcdrv_data.device_pcd);
             goto class_del;
         }
     }
 
     pr_info("PCD Module init successful\n");
 
-    return PCD_DRV_SUCCESS;
+    return 0;
 
 cdev_del:
 class_del:
