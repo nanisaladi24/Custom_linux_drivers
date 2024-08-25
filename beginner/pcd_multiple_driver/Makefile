@@ -1,4 +1,4 @@
-obj-m := pcd_n.o
+obj-m := pcd_multi.o
 ARCH=arm
 CROSS_COMPILE=arm-linux-gnueabihf-
 KERN_DIR=/home/nani/Nani/Learn/beaglebone_ldd/source/linux_bbb_5.10/

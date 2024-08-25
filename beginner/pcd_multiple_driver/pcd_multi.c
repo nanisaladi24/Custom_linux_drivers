@@ -308,7 +308,7 @@ static int __init pcd_driver_init(void)
         }
     }
 
-    pr_info("PCD Module init successful\n");
+    pr_info("PCD-Multi Module init successful\n");
 
     return 0;
 
@@ -323,7 +323,7 @@ class_del:
 ureg_char_dev:
     unregister_chrdev_region(pcdrv_data.device_number,NO_OF_DEVICES);
 out:
-    pr_info("PCD Module init failed\n");
+    pr_info("PCD-Multi Module init failed\n");
     return ret;
 }
 
@@ -337,7 +337,7 @@ static void __exit pcd_driver_cleanup(void)
     }
     class_destroy(pcdrv_data.class_pcd);
     unregister_chrdev_region(pcdrv_data.device_number,NO_OF_DEVICES);
-    pr_info("PCD Module unloaded\n");
+    pr_info("PCD-Multi Module unloaded\n");
 }
 
 module_init(pcd_driver_init);
