@@ -15,7 +15,13 @@
 
 #define NO_OF_DEVICES 4
 
-//#define MINOR_COUNT 1
+/* Read write permission macros */
+#define DEV_DRV_PERM_RDONLY 0x1
+#define DEV_DRV_PERM_WRONLY 0x10
+#define DEV_DRV_PERM_RDWR   0x11
+
+/* LOCAL ERROR/STATUS DEFINES */
+#define PCD_DRV_SUCCESS 0
 
 #define pr_fmt(fmt) "%s : "fmt,__func__ //WARNING EXPECTED. redefined pr_fmt. and it works because kernel builds these cases for pr_* cases
 //************************* FUNCTION DECLARATIONS *****************************//
@@ -25,7 +31,7 @@ ssize_t pcd_read(struct file *filep, char __user *buff, size_t count, loff_t *f_
 ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, loff_t *f_pos);
 int pcd_open(struct inode *inode, struct file *filep);
 int pcd_release(struct inode *inode, struct file *filep);
-int check_permission(void);
+int check_permission(int dev_perm, int access_mode);
 
 //************************* GLOBALS *****************************//
 /* Pseudo device' memory buffers */
@@ -64,25 +70,25 @@ struct pcdrv_private_data pcdrv_data =
             .buffer = device_buffer_pcdev1,
             .size = MEM_SIZE_MAX_PCDEV1,
             .serial_number = "PCDEV1XYZ123",
-            .perm = 0x1, /*RD only*/
+            .perm = DEV_DRV_PERM_RDONLY, /*RD only*/
         },
         [1] = {
             .buffer = device_buffer_pcdev2,
             .size = MEM_SIZE_MAX_PCDEV2,
             .serial_number = "PCDEV2XYZ123",
-            .perm = 0x10, /*WR only*/
+            .perm = DEV_DRV_PERM_WRONLY, /*WR only*/
         },
         [2] = {
             .buffer = device_buffer_pcdev3,
             .size = MEM_SIZE_MAX_PCDEV3,
             .serial_number = "PCDEV3XYZ123",
-            .perm = 0x11, /*RDWR*/
+            .perm = DEV_DRV_PERM_RDWR, /*RDWR*/
         },
         [3] = {
             .buffer = device_buffer_pcdev4,
             .size = MEM_SIZE_MAX_PCDEV4,
             .serial_number = "PCDEV4XYZ123",
-            .perm = 0x11, /*RDWR*/
+            .perm = DEV_DRV_PERM_RDWR, /*RDWR*/
         }
     }
 };
@@ -102,14 +108,15 @@ struct file_operations pcd_fops =
 
 loff_t pcd_lseek(struct file *filep, loff_t offset, int whence)
 {   
-    #if 0
+    struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)(filep->private_data);
+    int max_size = pcdev_data->size;  
     loff_t temp=0;
     pr_info("lseek requested\n");
     pr_info("Current file position: %lld\n",filep->f_pos);
     switch(whence)
     {
         case SEEK_SET:
-            if((offset>DEV_MEM_SIZE) || (offset<0))
+            if((offset>max_size) || (offset<0))
             {
                 return -EINVAL;
             }
@@ -117,15 +124,15 @@ loff_t pcd_lseek(struct file *filep, loff_t offset, int whence)
             break;
         case SEEK_CUR:
             temp = filep->f_pos + offset;
-            if ((temp>DEV_MEM_SIZE) || (temp<0))
+            if ((temp>max_size) || (temp<0))
             {
                 return -EINVAL;
             }
             filep->f_pos = temp;
             break;
         case SEEK_END:
-            temp = DEV_MEM_SIZE + offset;
-            if ((temp>DEV_MEM_SIZE) || (temp<0))
+            temp = max_size + offset;
+            if ((temp>max_size) || (temp<0))
             {
                 return -EINVAL;
             }
@@ -139,8 +146,6 @@ loff_t pcd_lseek(struct file *filep, loff_t offset, int whence)
 
     /* return update file position */
     return filep->f_pos;
-    #endif
-    return 0;
 }
 
 ssize_t pcd_read(struct file *filep, char __user *buff, size_t count, loff_t *f_pos)
@@ -173,14 +178,15 @@ ssize_t pcd_read(struct file *filep, char __user *buff, size_t count, loff_t *f_
 
 ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, loff_t *f_pos)
 {
-    #if 0
+    struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)(filep->private_data);
+    int max_size = pcdev_data->size;  
     pr_info("write requested for %zu bytes\n",count);
     pr_info("Current file position: %lld\n",*f_pos);
 
     /*Adjust the count*/
-    if ((*f_pos+count) > DEV_MEM_SIZE)
+    if ((*f_pos+count) > max_size)
     {
-        count = DEV_MEM_SIZE - *f_pos;
+        count = max_size - *f_pos;
     }
 
     if (!count)
@@ -190,7 +196,7 @@ ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, lof
     }
 
     /*copy to user*/
-    if (copy_from_user(&device_buffer[*f_pos],buff,count))
+    if (copy_from_user(&pcdev_data->buffer+(*f_pos),buff,count))
     {
         return -EFAULT;
     }
@@ -202,13 +208,21 @@ ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, lof
 
     /* return number of bytes successfully written */
     return count;
-    #endif
-    return -ENOMEM;
 }
 
-int check_permission(void)
+int check_permission(int dev_perm, int access_mode)
 {
-    return 0;
+    if (DEV_DRV_PERM_RDWR==dev_perm)
+        return PCD_DRV_SUCCESS;
+    /*Ensure Read only access*/
+    if ((DEV_DRV_PERM_RDONLY==dev_perm)&&((access_mode&FMODE_READ) && !(access_mode&FMODE_WRITE)))
+        return PCD_DRV_SUCCESS;
+    /*Ensure Write only access*/
+    if ((DEV_DRV_PERM_WRONLY==dev_perm)&&(!(access_mode&FMODE_READ) && (access_mode&FMODE_WRITE)))
+        return PCD_DRV_SUCCESS;
+    pr_info("FAILED. DEBUG msg: access_mode: 0x%x, fmode_values: FMODE_READ: 0x%x and FMODE_WRITE: 0x%x\n",access_mode,FMODE_READ,FMODE_WRITE);
+    pr_info("FAILED. DEBUG msg: local dev perm: 0x%x\n",dev_perm);
+    return -EPERM;
 }
 
 int pcd_open(struct inode *inode, struct file *filep)
@@ -228,16 +242,15 @@ int pcd_open(struct inode *inode, struct file *filep)
     filep->private_data = (void*)pcdev_data;
 
     /* check permission */
-    ret = check_permission();
-
+    ret = check_permission(pcdev_data->perm,filep->f_mode);
     (!ret)?pr_info("open is successful\n"):pr_info("open is unsuccessful\n");
-    return 0;
+    return ret;
 }
 
 int pcd_release(struct inode *inode, struct file *filep)
 {
     pr_info("release is successful\n");
-    return 0;
+    return PCD_DRV_SUCCESS;
 }
 
 static int __init pcd_driver_init(void)
@@ -281,7 +294,7 @@ static int __init pcd_driver_init(void)
 
 
         /* 4. Populate sysfs with device information */
-        pcdrv_data.device_pcd[i]=device_create(pcdrv_data.class_pcd,NULL,pcdrv_data.device_number+i,NULL,"pcdev-%d",i); //error handle later
+        pcdrv_data.device_pcd[i]=device_create(pcdrv_data.class_pcd,NULL,pcdrv_data.device_number+i,NULL,"pcdev-%d",i+1); //error handle later
         if(IS_ERR(pcdrv_data.device_pcd[i]))
         {
             pr_err("device creation failed\n");
@@ -292,7 +305,7 @@ static int __init pcd_driver_init(void)
 
     pr_info("PCD Module init successful\n");
 
-    return 0;
+    return PCD_DRV_SUCCESS;
 
 cdev_del:
 class_del:
