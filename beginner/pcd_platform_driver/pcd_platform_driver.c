@@ -8,6 +8,7 @@
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/mod_devicetable.h>
 
 #include "platform.h"
 
@@ -37,19 +38,47 @@ int check_permission(int dev_perm, int access_mode);
 int pcd_platform_driver_probe(struct platform_device *pdev);
 int pcd_platform_driver_remove(struct platform_device *pdev);
 
+//************************* ENUMS *****************************//
+typedef enum
+{
+    PCDEVA1X,
+    PCDEVB1X,
+    PCDEVC1X,
+    PCDEVD1X
+}DeviceIds;
+
 //************************* GLOBALS *****************************//
-/* Pseudo device' memory buffers */
-char device_buffer_pcdev1[MEM_SIZE_MAX_PCDEV1];
-char device_buffer_pcdev2[MEM_SIZE_MAX_PCDEV2];
-char device_buffer_pcdev3[MEM_SIZE_MAX_PCDEV3];
-char device_buffer_pcdev4[MEM_SIZE_MAX_PCDEV4];
+
+struct device_config 
+{
+    int config_item1;
+    int config_item2;
+};
+
+struct device_config pcdev_cfg[] =
+{
+    [PCDEVA1X] = {.config_item1 = 60, .config_item2 = 21},
+    [PCDEVB1X] = {.config_item1 = 50, .config_item2 = 22},
+    [PCDEVC1X] = {.config_item1 = 40, .config_item2 = 23},
+    [PCDEVD1X] = {.config_item1 = 30, .config_item2 = 24}
+};
+
+//this array is null terminated
+struct platform_device_id pcdev_ids[] = 
+{
+    [0] = {.name = "pcdev-A1x",.driver_data = PCDEVA1X}, //storing number (index only). not the address for driver_data
+    [1] = {.name = "pcdev-B1x",.driver_data = PCDEVB1X},
+    [2] = {.name = "pcdev-C1x",.driver_data = PCDEVC1X},
+    [3] = {.name = "pcdev-D1x",.driver_data = PCDEVD1X}
+};
 
 struct platform_driver pcd_platform_driver = 
 {
     .probe = pcd_platform_driver_probe,
     .remove = pcd_platform_driver_remove,
+    .id_table = pcdev_ids,
     .driver = {
-        .name = "pseudo-char-device"
+        .name = "pseudo-char-device" //name is don't case if id_table way used.
     }
 };
 
@@ -73,38 +102,6 @@ struct pcdrv_private_data
     struct device *device_pcd;
 };
 
-#if 0
-struct pcdrv_private_data pcdrv_data =
-{
-    .total_devices = NO_OF_DEVICES,
-    .pcdev_data = {
-        [0] = {
-            .buffer = device_buffer_pcdev1,
-            .size = MEM_SIZE_MAX_PCDEV1,
-            .serial_number = "PCDEV1XYZ123",
-            .perm = DEV_DRV_PERM_RDONLY, /*RD only*/
-        },
-        [1] = {
-            .buffer = device_buffer_pcdev2,
-            .size = MEM_SIZE_MAX_PCDEV2,
-            .serial_number = "PCDEV2XYZ123",
-            .perm = DEV_DRV_PERM_WRONLY, /*WR only*/
-        },
-        [2] = {
-            .buffer = device_buffer_pcdev3,
-            .size = MEM_SIZE_MAX_PCDEV3,
-            .serial_number = "PCDEV3XYZ123",
-            .perm = DEV_DRV_PERM_RDWR, /*RDWR*/
-        },
-        [3] = {
-            .buffer = device_buffer_pcdev4,
-            .size = MEM_SIZE_MAX_PCDEV4,
-            .serial_number = "PCDEV4XYZ123",
-            .perm = DEV_DRV_PERM_RDWR, /*RDWR*/
-        }
-    }
-};
-#endif 
 struct pcdrv_private_data pcdrv_data;
 
 
@@ -309,6 +306,9 @@ int pcd_platform_driver_probe(struct platform_device *pdev)
     pr_info("Device size: %d bytes\n",dev_data->pdata.size);
     pr_info("Device permission: 0x%x\n",dev_data->pdata.perm);
 
+    pr_info("Config Item 1: %d",pcdev_cfg[pdev->id_entry->driver_data].config_item1);
+    pr_info("Config Item 2: %d",pcdev_cfg[pdev->id_entry->driver_data].config_item2);
+
     /* 3. Dynamically allocate memory for device buffer using size information from the platform data */
     //dev_data->buffer = kzalloc(dev_data->pdata.size,GFP_KERNEL);
     dev_data->buffer = devm_kzalloc(&pdev->dev,dev_data->pdata.size,GFP_KERNEL); //devm usage
@@ -351,12 +351,12 @@ cdev_del:
     cdev_del(&dev_data->cdev);
 buffer_free:
     //kfree(dev_data->buffer);
-    devm_kfree(&pdev->dev,dev_data->buffer); //devm function use
+    devm_kfree(&pdev->dev,dev_data->buffer); //devm function use. Actually it not required. if probe fails, dev resources will be cleared!
 dev_data_free:
     //kfree(dev_data);
-    devm_kfree(&pdev->dev,dev_data); //devm function use
+    devm_kfree(&pdev->dev,dev_data); //devm function use. Actually it not required. if probe fails, dev resources will be cleared!
 out:
-    pr_info("Device probe failed\n"); //test commit
+    pr_info("Device probe failed\n");
     return ret;
 }
 int pcd_platform_driver_remove(struct platform_device *pdev)
