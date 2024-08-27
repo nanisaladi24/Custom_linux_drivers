@@ -298,7 +298,7 @@ static int __init pcd_driver_init(void)
         }
 
 
-        /* 4. Populate sysfs with device information */
+        /* 4. Populate sysfs with device information (creating device) */
         pcdrv_data.device_pcd=device_create(pcdrv_data.class_pcd,NULL,pcdrv_data.device_number+i,NULL,"pcdev-%d",i+1); //error handle later
         if(IS_ERR(pcdrv_data.device_pcd))
         {
