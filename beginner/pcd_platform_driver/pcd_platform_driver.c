@@ -356,7 +356,7 @@ dev_data_free:
     //kfree(dev_data);
     devm_kfree(&pdev->dev,dev_data); //devm function use
 out:
-    pr_info("Device probe failed\n");
+    pr_info("Device probe failed\n"); //test commit
     return ret;
 }
 int pcd_platform_driver_remove(struct platform_device *pdev)
