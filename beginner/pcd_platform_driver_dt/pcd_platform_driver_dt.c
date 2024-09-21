@@ -322,34 +322,32 @@ int pcd_platform_driver_probe(struct platform_device *pdev)
     struct pcdev_platform_data *pdata;
     int ret=0;
     int driver_data;
-    // struct of_device_id* match; //NOT REQUIRED. Can you wrapper API. see match data extraction below.
+    const struct of_device_id* match; 
     struct device *dev = &pdev->dev;
 
     dev_info(dev,"A device is detected\n");
 
     /* 1. Get the platform device data */
-    pdata = pcdev_get_platdata_from_dt(dev); //from device tree
-    if(IS_ERR(pdata))
-        return -EINVAL;
-
-    if(!pdata) //From device setup code
+    /* Match will be NULL if linux doesn't support CONFIG_OF */
+    match = of_match_device(pdev->dev.driver->of_match_table,dev);
+    if(match)
+    {
+        pdata = pcdev_get_platdata_from_dt(dev); //from device tree
+        if(IS_ERR(pdata))
+            return PTR_ERR(pdata); //extracts error from ptr 
+        //driver_data=(int)of_device_get_match_data(dev);
+        //OR
+        driver_data=(int)match->data;
+    }
+    else
     {
         pdata = (struct pcdev_platform_data *)dev_get_platdata(dev); //returns void ptr. so casting is necessary
-        if (!pdata)
-        {
-            dev_info(dev,"No platform data available\n");
-            return -EINVAL;
-        }
         driver_data = pdev->id_entry->driver_data;
     }
-    else //from device tree
+    if (!pdata)
     {
-        driver_data=(int)of_device_get_match_data(dev);
-        /* OR it can be extracted as below */
-        #if 0 //commented. The usage of Wrapper is better (of_device_get_match_data)
-        match = of_device_match(pdev->dev.driver->of_match_table,&pdev->dev);
-        driver_data = (int)match->data;
-        #endif
+        dev_info(dev,"No platform data available\n");
+        return -EINVAL;
     }
 
     /* 2. Dynamically allocate memory for the device private data */
