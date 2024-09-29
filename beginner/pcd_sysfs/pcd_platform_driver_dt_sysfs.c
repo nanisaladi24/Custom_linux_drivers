@@ -1,61 +1,12 @@
-#include <linux/module.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/device.h>
-#include <linux/uaccess.h> //for copy_to_user, copy_from_user
-#include <linux/kdev_t.h>
-#include <linux/version.h>
-#include <linux/err.h>
-#include <linux/platform_device.h>
-#include <linux/slab.h>
-#include <linux/mod_devicetable.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
+#include "pcd_platform_driver_dt_sysfs.h"
 
-#include "platform.h"
-
-//*************************Pre-processor macros*****************************//
-#define MEM_SIZE_MAX_PCDEV1 1024
-#define MEM_SIZE_MAX_PCDEV2 512
-#define MEM_SIZE_MAX_PCDEV3 1024
-#define MEM_SIZE_MAX_PCDEV4 512
-
-#define NO_OF_DEVICES 4 //UNUSED
-#define MAX_DEVICES 10
-
-/* LOCAL ERROR/STATUS DEFINES */
-#define PCD_DRV_SUCCESS 0
-
-#define pr_fmt(fmt) "%s : "fmt,__func__ //WARNING EXPECTED. redefined pr_fmt. and it works because kernel builds these cases for pr_* cases
 //************************* FUNCTION DECLARATIONS *****************************//
-
-loff_t pcd_lseek(struct file *filep, loff_t offset, int whence);
-ssize_t pcd_read(struct file *filep, char __user *buff, size_t count, loff_t *f_pos);
-ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, loff_t *f_pos);
-int pcd_open(struct inode *inode, struct file *filep);
-int pcd_release(struct inode *inode, struct file *filep);
-int check_permission(int dev_perm, int access_mode);
 
 /* Probe / Remove functions */
 int pcd_platform_driver_probe(struct platform_device *pdev);
 int pcd_platform_driver_remove(struct platform_device *pdev);
 
-//************************* ENUMS *****************************//
-typedef enum
-{
-    PCDEVA1X,
-    PCDEVB1X,
-    PCDEVC1X,
-    PCDEVD1X
-}DeviceIds;
-
 //************************* GLOBALS *****************************//
-
-struct device_config 
-{
-    int config_item1;
-    int config_item2;
-};
 
 struct device_config pcdev_cfg[] =
 {
@@ -95,26 +46,6 @@ struct platform_driver pcd_platform_driver =
     }
 };
 
-/* Device private data struct */
-struct pcdev_private_data
-{
-    struct pcdev_platform_data pdata;
-    char *buffer;
-    dev_t dev_num;
-    struct cdev cdev;
-};
-
-/* Driver private data struct */
-struct pcdrv_private_data
-{
-    int total_devices;
-    /* holds device number of base (first device) of all allocated devices */
-    dev_t device_num_base;
-    /* Device class/device structs */
-    struct class *class_pcd;
-    struct device *device_pcd;
-};
-
 struct pcdrv_private_data pcdrv_data;
 
 
@@ -129,161 +60,53 @@ struct file_operations pcd_fops =
     .owner = THIS_MODULE
 };
 
+/* Create two  variables of struct device_attribute */
+static DEVICE_ATTR(max_size,S_IRUGO|S_IWUSR,show_max_size,store_max_size);
+static DEVICE_ATTR(serial_num,S_IRUGO,show_serial_num,NULL);
+
 //************************* FUNCTIONS *****************************//
 
-loff_t pcd_lseek(struct file *filep, loff_t offset, int whence)
-{   
-    struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)(filep->private_data);
-    int max_size = pcdev_data->pdata.size;  
-    loff_t temp=0;
-    pr_info("lseek requested\n");
-    pr_info("Current file position: %lld\n",filep->f_pos);
-    switch(whence)
-    {
-        case SEEK_SET:
-            if((offset>max_size) || (offset<0))
-            {
-                return -EINVAL;
-            }
-            filep->f_pos = offset;
-            break;
-        case SEEK_CUR:
-            temp = filep->f_pos + offset;
-            if ((temp>max_size) || (temp<0))
-            {
-                return -EINVAL;
-            }
-            filep->f_pos = temp;
-            break;
-        case SEEK_END:
-            temp = max_size + offset;
-            if ((temp>max_size) || (temp<0))
-            {
-                return -EINVAL;
-            }
-            filep->f_pos = temp;
-            break;
-        default:
-            return -EINVAL; //invalid arg received for whence
-    }
-
-    pr_info("Updated file position: %lld\n",filep->f_pos);
-
-    /* return update file position */
-    return filep->f_pos;
+ssize_t show_max_size(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    /* get access to the device private data */
+    struct pcdev_private_data *dev_data = dev_get_drvdata(dev->parent);
+    return sprintf(buf,"%d\n",dev_data->pdata.size);
 }
 
-ssize_t pcd_read(struct file *filep, char __user *buff, size_t count, loff_t *f_pos)
+ssize_t show_serial_num(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)(filep->private_data);
-    int max_size = pcdev_data->pdata.size;
-    pr_info("read requested for %zu bytes\n",count);
-    pr_info("Current file position: %lld\n",*f_pos);
+    /* get access to the device private data */
+    struct pcdev_private_data *dev_data = dev_get_drvdata(dev->parent);
+    return sprintf(buf,"%s\n",dev_data->pdata.serial_number);
+}
 
-    /*Adjust the count*/
-    if ((*f_pos+count) > max_size)
-    {
-        count = max_size - *f_pos;
-    }
-
-    /*copy to user*/
-    if (copy_to_user(buff,pcdev_data->buffer+(*f_pos),count))
-    {
-        return -EFAULT;
-    }
-
-    /*update current file position*/
-    *f_pos += count;
-    pr_info("Number of bytes successfully read: %zu\n",count);
-    pr_info("Updated file position: %lld\n",*f_pos);
-
-    /* return number of bytes successfully read */
+ssize_t store_max_size(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    /* get access to the device private data */
+    struct pcdev_private_data *dev_data = dev_get_drvdata(dev->parent);
+    long result;
+    int ret;
+    
+    if(ret = kstrtol(buf,10,&result))
+        return ret;
+    dev_data->pdata.size = result;
+    dev_data->buffer = krealloc(dev_data->buffer,dev_data->pdata.size,GFP_KERNEL);
+    dev_info(dev,"Re-allocated memory for the device %d\n",result);
     return count;
 }
 
-ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, loff_t *f_pos)
+static int pcd_sysfs_create_files(struct device *pcd_dev)
 {
-    struct pcdev_private_data *pcdev_data = (struct pcdev_private_data*)(filep->private_data);
-    int max_size = pcdev_data->pdata.size;  
-    pr_info("write requested for %zu bytes\n",count);
-    pr_info("Current file position: %lld\n",*f_pos);
-
-    /*Adjust the count*/
-    if ((*f_pos+count) > max_size)
+    int ret = 0;
+    if(ret = sysfs_create_file(&pcd_dev->kobj,&dev_attr_max_size.attr))
     {
-        count = max_size - *f_pos;
+        return ret;
     }
-
-    if (!count)
-    {
-        pr_err("No space left on the device\n");
-        return -ENOMEM;
-    }
-
-    /*copy to user*/
-    if (copy_from_user(pcdev_data->buffer+(*f_pos),buff,count)) 
-    /*
-    * Found a bug above during development. 
-    * Used &pcdev_data->buffer instead of direct dereference for pointer. 
-    * This caused mem overwrite. Kernel memory is so insecure. This caused segmentation fault big crash (memory leak).
-    */
-    {
-        return -EFAULT;
-    }
-
-    /*update current file position*/
-    *f_pos += count;
-    pr_info("Number of bytes successfully written: %zu\n",count);
-    pr_info("Updated file position: %lld\n",*f_pos);
-
-    /* return number of bytes successfully written */
-    return count;
+    return sysfs_create_file(&pcd_dev->kobj,&dev_attr_serial_num.attr);
 }
 
-int check_permission(int dev_perm, int access_mode)
-{
-    if (DEV_DRV_PERM_RDWR==dev_perm)
-        return PCD_DRV_SUCCESS;
-    /*Ensure Read only access*/
-    if ((DEV_DRV_PERM_RDONLY==dev_perm)&&((access_mode&FMODE_READ) && !(access_mode&FMODE_WRITE)))
-        return PCD_DRV_SUCCESS;
-    /*Ensure Write only access*/
-    if ((DEV_DRV_PERM_WRONLY==dev_perm)&&(!(access_mode&FMODE_READ) && (access_mode&FMODE_WRITE)))
-        return PCD_DRV_SUCCESS;
-    pr_info("FAILED. DEBUG msg: access_mode: 0x%x, fmode_values: FMODE_READ: 0x%x and FMODE_WRITE: 0x%x\n",access_mode,FMODE_READ,FMODE_WRITE);
-    pr_info("FAILED. DEBUG msg: local dev perm: 0x%x\n",dev_perm);
-    return -EPERM;
-}
-
-int pcd_open(struct inode *inode, struct file *filep)
-{
-    int ret=0;
-    struct pcdev_private_data *pcdev_data;
-    /* find out on which device file open was attempted by userspace */
-    int minor_n=MINOR(inode->i_rdev);
-    pr_info("minor access: %d\n",minor_n);
-
-    /* Get device private data struct */
-    pcdev_data = container_of(inode->i_cdev,struct pcdev_private_data,cdev);
-
-    /* Supply device private data to other methods (seek,read,write). 
-    Other methods will not have access to inode. 
-    That's why you can store in filep and reuse. */
-    filep->private_data = (void*)pcdev_data;
-
-    /* check permission */
-    ret = check_permission(pcdev_data->pdata.perm,filep->f_mode);
-    (!ret)?pr_info("open is successful\n"):pr_info("open is unsuccessful\n");
-    return ret;
-}
-
-int pcd_release(struct inode *inode, struct file *filep)
-{
-    pr_info("release is successful\n");
-    return 0;
-}
-
-struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev)
+/* local helper function to get platform data */
+static struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev)
 {
     struct device_node *dev_node = dev->of_node;
     struct pcdev_platform_data *pdata;
@@ -404,6 +227,13 @@ int pcd_platform_driver_probe(struct platform_device *pdev)
 
     pcdrv_data.total_devices++;
 
+    ret = pcd_sysfs_create_files(pcdrv_data.device_pcd);
+    if (ret < 0)
+    {
+        device_destroy(pcdrv_data.class_pcd,dev_data->dev_num);
+        return ret;
+    }
+
     dev_info(dev,"The probe was successful\n");
     return 0;
 
@@ -436,6 +266,8 @@ int pcd_platform_driver_remove(struct platform_device *pdev)
     dev_info(dev,"A device is removed\n");
     return 0;
 }
+
+/*********************** Driver init/exit functions ***********************/
 
 static int __init pcd_platform_driver_init(void)
 {   
@@ -491,5 +323,5 @@ module_exit(pcd_platform_driver_cleanup);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("NANI_LINUX_DRIVERS");
-MODULE_DESCRIPTION("Pseudo char driver multiple device support module");
+MODULE_DESCRIPTION("Pseudo char driver multiple device support module dt snd sysfs");
 MODULE_INFO(board,"Beaglebone Black REV A5");

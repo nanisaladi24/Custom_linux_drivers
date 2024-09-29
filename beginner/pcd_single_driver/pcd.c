@@ -138,7 +138,7 @@ ssize_t pcd_write(struct file *filep, const char __user *buff, size_t count, lof
 
     /*update current file position*/
     *f_pos += count;
-    pr_info("Number of bytes successfully writter: %zu\n",count);
+    pr_info("Number of bytes successfully written: %zu\n",count);
     pr_info("Updated file position: %lld\n",*f_pos);
 
     /* return number of bytes successfully written */
