@@ -1,0 +1,7 @@
+in drv src file:
+
+- init
+- cleanup
+- probe
+- remove
+- register platform driver

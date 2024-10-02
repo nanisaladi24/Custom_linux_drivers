@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "pcd_platform_driver_dt_sysfs.h": "c",
+        "type_traits": "c"
+    }
+}
